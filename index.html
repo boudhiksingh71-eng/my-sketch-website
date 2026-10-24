@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<title>Sketch — My Drawing Space</title>
+<style>
+:root{color-scheme:light;--ink:#202123;--muted:#6b7280;--line:#e5e7eb;--soft:#f7f7f8}
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:#fff}body{display:flex;flex-direction:column;min-height:100dvh}
+header{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--line);gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:16px}.mark{width:30px;height:30px;border-radius:10px;background:#111827;color:#fff;display:grid;place-items:center;font-size:18px}
+.header-actions{display:flex;gap:8px;align-items:center}.status{font-size:12px;color:var(--muted);white-space:nowrap}
+button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:9px 12px;min-height:38px;cursor:pointer;touch-action:manipulation}button:active{background:#f1f5f9}button:disabled{opacity:.35;cursor:default}.primary{background:#111827;color:#fff;border-color:#111827}.primary:active{background:#374151}
+main{flex:1;display:flex;flex-direction:column;min-height:0}.toolbar{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);overflow-x:auto;flex-shrink:0;scrollbar-width:thin}.tool{display:flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}.tool.active{background:#e8f5f0;border-color:#9edbc7;color:#087f5b}.separator{height:28px;width:1px;background:var(--line);flex-shrink:0}.color-label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}input[type=color]{width:32px;height:32px;border:0;background:transparent;padding:0;cursor:pointer}input[type=range]{width:88px;accent-color:#111827}.size-value{font-size:12px;color:var(--muted);min-width:24px}
+.canvas-wrap{flex:1;min-height:180px;position:relative;background:#fff;overflow:hidden}canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}.hint{position:absolute;inset:0;display:grid;place-items:center;color:#9ca3af;font-size:14px;pointer-events:none;text-align:center;padding:20px}.hint.hidden{display:none}
+footer{padding:9px 14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted);font-size:12px}.foot-right{display:flex;gap:10px;align-items:center}
+@media(max-width:560px){header{height:54px;padding:0 10px}.brand{font-size:15px}.status{display:none}.toolbar{padding:8px;gap:6px}.toolbar button{padding:8px 10px}.tool .word{display:none}.toolbar .color-label span{display:none}footer{font-size:11px}.header-actions button{padding:8px 10px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="mark">✎</div><span>Sketch</span></div>
+  <div class="header-actions"><span class="status" id="saveStatus">Ready to draw</span><button id="newBtn" title="Start a fresh page">New</button><button class="primary" id="saveBtn">Save PNG</button></div>
+</header>
+<main>
+  <nav class="toolbar" aria-label="Drawing tools">
+    <button class="tool active" id="penBtn" aria-pressed="true" title="Pen">✎ <span class="word">Pen</span></button>
+    <button class="tool" id="eraserBtn" aria-pressed="false" title="Eraser">⌫ <span class="word">Eraser</span></button>
+    <span class="separator"></span>
+    <button id="undoBtn" title="Undo" disabled>↶ <span class="word">Undo</span></button>
+    <button id="redoBtn" title="Redo" disabled>↷ <span class="word">Redo</span></button>
+    <span class="separator"></span>
+    <label class="color-label"><span>Color</span><input id="colorPicker" type="color" value="#202123" aria-label="Pen color"></label>
+    <label class="color-label"><span>Size</span><input id="sizePicker" type="range" min="1" max="32" value="4" aria-label="Pen size"><span class="size-value" id="sizeValue">4</span></label>
+    <span class="separator"></span>
+    <button id="clearBtn" title="Clear the page">Clear</button>
+  </nav>
+  <section class="canvas-wrap" id="canvasWrap">
+    <canvas id="canvas" aria-label="Drawing canvas"></canvas>
+    <div class="hint" id="hint">Your blank canvas<br><span style="font-size:12px">Draw here with your finger or a stylus</span></div>
+  </section>
+</main>
+<footer><span>Private to this browser · Auto-saves on this device</span><span class="foot-right"><span id="dimensions">Touch or draw anywhere</span></span></footer>
+<script>
+(() => {
+ const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d',{alpha:false});
+ const wrap=document.getElementById('canvasWrap'),hint=document.getElementById('hint');
+ const penBtn=document.getElementById('penBtn'),eraserBtn=document.getElementById('eraserBtn');
+ const undoBtn=document.getElementById('undoBtn'),redoBtn=document.getElementById('redoBtn');
+ const colorPicker=document.getElementById('colorPicker'),sizePicker=document.getElementById('sizePicker');
+ const sizeValue=document.getElementById('sizeValue'),status=document.getElementById('saveStatus');
+ let drawing=false,tool='pen',last=null,history=[],redoStack=[],saveTimer=null;
+ const KEY='my-sketch-website-canvas-v1';
+ function setStatus(s){status.textContent=s}
+ function dimensions(){const r=wrap.getBoundingClientRect();return {w:Math.max(1,Math.round(r.width)),h:Math.max(1,Math.round(r.height)),dpr:Math.min(window.devicePixelRatio||1,2)}}
+ function resize(){
+   const old=canvas.width&&canvas.height?canvas.toDataURL():null, d=dimensions();
+   canvas.width=Math.round(d.w*d.dpr);canvas.height=Math.round(d.h*d.dpr);
+   canvas.style.width=d.w+'px';canvas.style.height=d.h+'px';
+   ctx.setTransform(d.dpr,0,0,d.dpr,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,d.w,d.h);
+   if(old){const im=new Image();im.onload=()=>{ctx.drawImage(im,0,0,d.w,d.h);};im.src=old}
+   document.getElementById('dimensions').textContent=d.w+' × '+d.h;
+ }
+ function snapshot(){try{return canvas.toDataURL('image/png')}catch(e){return null}}
+ function restore(data){if(!data)return;const im=new Image();im.onload=()=>{ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(im,0,0,canvas.width,canvas.height);ctx.restore();updateHint();};im.src=data}
+ function remember(){history.push(snapshot());if(history.length>40)history.shift();redoStack=[];updateButtons()}
+ function updateButtons(){undoBtn.disabled=history.length===0;redoBtn.disabled=redoStack.length===0}
+ function updateHint(){try{const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;let hasInk=false;for(let i=0;i<d.length;i+=Math.max(4,Math.floor(d.length/50000)*4)){if(d[i]<245||d[i+1]<245||d[i+2]<245){hasInk=true;break}}hint.classList.toggle('hidden',hasInk)}catch(e){}}
+ function autosave(){clearTimeout(saveTimer);setStatus('Saving…');saveTimer=setTimeout(()=>{try{localStorage.setItem(KEY,snapshot());setStatus('Saved on this device')}catch(e){setStatus('Could not auto-save — use Save PNG')}},250)}
+ function point(e){const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
+ function start(e){if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();canvas.setPointerCapture?.(e.pointerId);remember();drawing=true;last=point(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=Number(sizePicker.value);ctx.strokeStyle=tool==='eraser'?'#ffffff':colorPicker.value;ctx.lineTo(last.x+.01,last.y+.01);ctx.stroke();hint.classList.add('hidden')}
+ function move(e){if(!drawing)return;e.preventDefault();const p=point(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=Number(sizePicker.value);ctx.strokeStyle=tool==='eraser'?'#ffffff':colorPicker.value;ctx.stroke();last=p}
+ function end(){if(!drawing)return;drawing=false;last=null;updateHint();autosave()}
+ function choose(t){tool=t;penBtn.classList.toggle('active',t==='pen');eraserBtn.classList.toggle('active',t==='eraser');penBtn.setAttribute('aria-pressed',String(t==='pen'));eraserBtn.setAttribute('aria-pressed',String(t==='eraser'));canvas.style.cursor=t==='eraser'?'cell':'crosshair'}
+ canvas.addEventListener('pointerdown',start);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);canvas.addEventListener('lostpointercapture',end);
+ penBtn.onclick=()=>choose('pen');eraserBtn.onclick=()=>choose('eraser');
+ sizePicker.oninput=()=>sizeValue.textContent=sizePicker.value;
+ undoBtn.onclick=()=>{if(!history.length)return;redoStack.push(snapshot());restore(history.pop());updateButtons();autosave()};
+ redoBtn.onclick=()=>{if(!redoStack.length)return;history.push(snapshot());restore(redoStack.pop());updateButtons();autosave()};
+ document.getElementById('clearBtn').onclick=()=>{if(!confirm('Clear the whole canvas?'))return;remember();const d=dimensions();ctx.fillStyle='#fff';ctx.fillRect(0,0,d.w,d.h);updateHint();autosave()};
+ document.getElementById('newBtn').onclick=()=>{if(!confirm('Start a new blank page? Your current drawing will be replaced.'))return;remember();const d=dimensions();ctx.fillStyle='#fff';ctx.fillRect(0,0,d.w,d.h);updateHint();autosave()};
+ document.getElementById('saveBtn').onclick=()=>{const a=document.createElement('a');a.download='my-sketch-'+new Date().toISOString().slice(0,10)+'.png';a.href=canvas.toDataURL('image/png');a.click();setStatus('PNG downloaded')};
+ window.addEventListener('resize',()=>{const data=snapshot();resize();if(data)restore(data)});
+ resize();
+ try{const saved=localStorage.getItem(KEY);if(saved){restore(saved);setStatus('Restored your last drawing')}}catch(e){}
+ updateButtons();
+})();
+</script>
+</body>
+</html>
